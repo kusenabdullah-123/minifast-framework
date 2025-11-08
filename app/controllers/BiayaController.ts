@@ -1,33 +1,40 @@
+import { Request, Response } from 'express';
 import { BiayaModel } from '../models/BiayaModel.js';
 
 export class BiayaController {
   private biayaModel = new BiayaModel();
 
-  async result(req: any, res: any) {
+  async result(req: Request, res: Response) {
     const data = await this.biayaModel.result();
     res.json({ success: true, data });
   }
 
-  async row(req: any, res: any) {
+  async row(req: Request, res: Response) {
     const { idBiaya } = req.params;
     const data = await this.biayaModel.row({ idBiaya });
-    res.json({ success: true, data });
+    res.json(data);
   }
 
-  async insert(req: any, res: any) {
-    const id = await this.biayaModel.insert(req.body);
-    res.json({ success: true, id });
+  async insert(req: Request, res: Response) {
+    const preparedData = {
+      nmBiaya: req.body.nmBiaya
+    };
+    const id = await this.biayaModel.insert(preparedData);
+    res.status(201).json({ id });
   }
 
-  async update(req: any, res: any) {
+  async update(req: Request, res: Response) {
     const { idBiaya } = req.params;
-    const ok = await this.biayaModel.update(`idBiaya = ${idBiaya}`, req.body);
-    res.json({ success: ok });
+    const preparedData = {
+      nmBiaya: req.body.nmBiaya
+    };
+    const ok = await this.biayaModel.update(`idBiaya = ${idBiaya}`, preparedData);
+    res.status(204).json(null);
   }
 
-  async delete(req: any, res: any) {
+  async delete(req: Request, res: Response) {
     const { idBiaya } = req.params;
     const ok = await this.biayaModel.delete(`idBiaya = ${idBiaya}`);
-    res.json({ success: ok });
+    res.status(204).json(null);
   }
 }
