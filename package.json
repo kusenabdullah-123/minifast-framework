@@ -1,6 +1,6 @@
 {
   "name": "@kusena/minifast-framework",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Minimal Framework for Express.js 5 + TypeScript (ESM-ready)",
   "type": "module",
   "main": "./dist/index.js",
