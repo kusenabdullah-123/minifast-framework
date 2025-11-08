@@ -1,15 +1,26 @@
 import { Framework } from './src/core/Framework.js';
 import { Router } from './src/core/Router.js';
-import { HomeController } from './app/controllers/HomeController.js';
-import { View } from './src/core/View.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import { Manager } from './src/core/database/Manager.js';
+import { BiayaController } from './app/controllers/BiayaController.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-View.addPath(path.join(__dirname, 'themes'));
 
-Router.get('/', [HomeController, 'index']);
+Manager.add('main', {
+  driver: 'mysql',
+  host: 'mariadb.database',
+  username: 'root',
+  password: 'root',
+  database: 'express',
+});
+
+Router.get('/biaya', [BiayaController, 'result']);
+Router.get('/biaya/:idBiaya', [BiayaController, 'row']);
+Router.post('/biaya', [BiayaController, 'insert']);
+Router.patch('/biaya/:idBiaya', [BiayaController, 'update']);
+Router.delete('/biaya/:idBiaya', [BiayaController, 'delete']);
 
 await Framework.run();

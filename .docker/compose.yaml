@@ -1,0 +1,24 @@
+name: minifast
+services:
+  dev:
+    container_name: minifast
+    image: mochrira/dev:latest
+    volumes: 
+      - ../:/workspace
+    ports:
+      - 3000:3000
+    environment:
+      - NG_INSTALL=NO
+      - NG_VERSION=17
+    networks:
+      - environment
+      - database
+  
+networks:
+  environment:
+    name: environment
+    external: true
+  
+  database:
+    name: database
+    external: true
