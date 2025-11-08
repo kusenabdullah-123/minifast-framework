@@ -1,32 +1,36 @@
 {
   "name": "@kusena/minifast-framework",
-  "version": "0.0.2",
-  "description": "Minimal Framework for express js",
+  "version": "0.0.3",
+  "description": "Minimal Framework for Express.js 5 + TypeScript (ESM-ready)",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js"
-    }
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
   ],
   "scripts": {
     "dev": "tsx watch index.ts",
+    "build": "tsc",
     "start": "node dist/index.js",
-    "build": "tsc"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "ejs": "^3.1.10",
     "express": "^5.1.0",
+    "ejs": "^3.1.10",
     "mysql2": "^3.15.3"
   },
   "devDependencies": {
-    "@types/ejs": "^3.1.5",
-    "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "@types/express": "^5.0.0",
+    "@types/ejs": "^3.1.5",
     "tsx": "^4.20.6",
     "typescript": "^5.6.3"
   }
