@@ -1,6 +1,6 @@
 {
   "name": "@kusena/minifast-framework",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Minimal Framework for express js",
   "type": "module",
   "main": "dist/index.js",
