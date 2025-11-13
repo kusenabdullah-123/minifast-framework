@@ -1,17 +1,17 @@
-import mysql from "mysql2/promise";
+import mysql, { Pool, PoolConnection } from "mysql2/promise";
 import { MySQLResult } from "./Result.js";
 
 export class MySQLSchema {
-  private pool: mysql.Pool;
+  private pool: Pool;
+  private conn: PoolConnection | null = null;
 
-  private _select = "*";
-  private _from = "";
-  private _join = "";
-  private _where = "";
-  private _group = "";
-  private _order = "";
-  private _limit = -1;
-  private _offset = 0;
+  private _select: string | null = null;
+  private _where: string | null = null;
+  private _order: string | null = null;
+  private _offset: number | null = 0;
+  private _limit: number | null = -1;
+  private _join: string | null = null;
+  private _group: string | null = null;
 
   constructor(private config: any) {
     this.pool = mysql.createPool({
@@ -19,115 +19,128 @@ export class MySQLSchema {
       user: config.username,
       password: config.password,
       database: config.database,
-      port: config.port || 3306,
-      waitForConnections: true,
-      connectionLimit: config.connectionLimit || 10,
+      port: config.port ?? 3306,
+      connectionLimit: config.connectionLimit ?? 10,
     });
   }
 
-  // -------------------------
-  //  QUERY BUILDER METHODS
-  // -------------------------
+  // ============================================================
+  // TRANSACTION (SAMA persis seperti PHP Manager)
+  // ============================================================
+
+  async startTransaction() {
+    if (!this.conn) this.conn = await this.pool.getConnection();
+    await this.conn.beginTransaction();
+    return true;
+  }
+
+  async commit() {
+    if (!this.conn) return false;
+    await this.conn.commit();
+    this.conn.release();
+    this.conn = null;
+    return true;
+  }
+
+  async rollback() {
+    if (!this.conn) return false;
+    await this.conn.rollback();
+    this.conn.release();
+    this.conn = null;
+    return true;
+  }
+
+  // ============================================================
+  // INTERNAL HELPERS
+  // ============================================================
+
+  private reset() {
+    this._select = null;
+    this._where = null;
+    this._order = null;
+    this._offset = 0;
+    this._limit = -1;
+    this._join = null;
+    this._group = null;
+  }
+
+  private escapeValue(val: any) {
+    if (val === null) return "NULL";
+    if (typeof val === "boolean") return val ? "1" : "0";
+    return mysql.escape(val);
+  }
+
+  // ============================================================
+  // QUERY BUILDER — PHP STYLE
+  // ============================================================
 
   select(cols: string | string[]) {
-    this._select = Array.isArray(cols) ? cols.join(", ") : cols;
+    this._select = Array.isArray(cols) ? cols.join(",") : cols;
     return this;
   }
 
-  from(table: string | null) {
-    if (table) this._from = table;
-    return this;
-  }
-
-  where(condition?: string | Record<string, any> | Array<any>) {
-    if (!condition) {
-      this._where = "";
-      return this;
-    }
-
-    const clauses: string[] = [];
-
-    if (typeof condition === "string") {
-      if (condition.trim()) clauses.push(condition);
-    }
-
-    else if (Array.isArray(condition)) {
-      for (const w of condition) {
-        if (typeof w === "string") clauses.push(w);
-        if (Array.isArray(w)) {
-          if (w.length === 2)
-            clauses.push(`${w[0]} = ${mysql.escape(w[1])}`);
-          if (w.length === 3)
-            clauses.push(`${w[0]} ${w[1]} ${mysql.escape(w[2])}`);
-        }
-      }
-    }
-
-    else if (typeof condition === "object") {
-      for (const [k, v] of Object.entries(condition)) {
-        clauses.push(`${k} = ${mysql.escape(v)}`);
-      }
-    }
-
-    this._where = clauses.length ? `WHERE (${clauses.join(" AND ")})` : "";
-    return this;
-  }
-
-  orWhere(condition?: string | Array<any>) {
+  where(condition?: string | any[]) {
     if (!condition) return this;
 
-    const clauses: string[] = [];
+    let tmp = "";
 
-    if (typeof condition === "string") clauses.push(condition);
-
-    else if (Array.isArray(condition)) {
-      for (const w of condition) {
-        if (typeof w === "string") clauses.push(w);
-        if (Array.isArray(w)) {
-          if (w.length === 2)
-            clauses.push(`${w[0]} = ${mysql.escape(w[1])}`);
-          if (w.length === 3)
-            clauses.push(`${w[0]} ${w[1]} ${mysql.escape(w[2])}`);
+    if (typeof condition === "string") {
+      tmp = condition;
+    } else if (Array.isArray(condition)) {
+      condition.forEach((w, i) => {
+        if (i !== 0) tmp += " AND ";
+        if (typeof w === "string") tmp += w;
+        else if (Array.isArray(w)) {
+          if (w.length === 2) tmp += `${w[0]} = ${this.escapeValue(w[1])}`;
+          if (w.length === 3) tmp += `${w[0]} ${w[1]} ${this.escapeValue(w[2])}`;
         }
-      }
+      });
     }
 
-    if (clauses.length) {
-      this._where = this._where
-        ? `${this._where} OR (${clauses.join(" OR ")})`
-        : `WHERE (${clauses.join(" OR ")})`;
-    }
+    if (!this._where) this._where = `WHERE (${tmp})`;
+    else this._where += ` AND (${tmp})`;
 
     return this;
   }
 
-  leftJoin(tbl: string, cond: string) {
-    this._join += ` LEFT JOIN ${tbl} ON ${cond}`;
-    return this;
-  }
+  orWhere(condition?: string | any[]) {
+    if (!condition) return this;
 
-  innerJoin(tbl: string, cond: string) {
-    this._join += ` INNER JOIN ${tbl} ON ${cond}`;
+    let tmp = "";
+
+    if (typeof condition === "string") {
+      tmp = condition;
+    } else if (Array.isArray(condition)) {
+      condition.forEach((w, i) => {
+        if (i !== 0) tmp += " OR ";
+        if (typeof w === "string") tmp += w;
+        else if (Array.isArray(w)) {
+          if (w.length === 2) tmp += `${w[0]} = ${this.escapeValue(w[1])}`;
+          if (w.length === 3) tmp += `${w[0]} ${w[1]} ${this.escapeValue(w[2])}`;
+        }
+      });
+    }
+
+    if (!this._where) this._where = `WHERE (${tmp})`;
+    else this._where += ` AND (${tmp})`;
+
     return this;
   }
 
   groupBy(cols: string | string[]) {
-    this._group = `GROUP BY ${Array.isArray(cols) ? cols.join(", ") : cols}`;
+    this._group = `GROUP BY ${Array.isArray(cols) ? cols.join(",") : cols}`;
     return this;
   }
 
-  orderBy(cols?: string | Record<string, string>) {
-    if (!cols || (typeof cols === "object" && !Object.keys(cols).length)) {
-      this._order = "";
-      return this;
-    }
+  leftJoin(tbl: string, cond: string) {
+    this._join = (this._join ?? "") + ` LEFT JOIN ${tbl} ON ${cond}`;
+    return this;
+  }
 
-    if (typeof cols === "string") {
-      this._order = `ORDER BY ${cols}`;
-    } else {
-      const parts = Object.entries(cols).map(([k, v]) => `${k} ${v}`);
-      this._order = `ORDER BY ${parts.join(", ")}`;
-    }
+  order(order: any) {
+    if (!order) return this;
+    const parts = Object.entries(order).map(([k, v]) => `${k} ${v}`);
+    this._order = parts.length ? `ORDER BY ${parts.join(",")}` : null;
     return this;
   }
 
@@ -141,111 +154,92 @@ export class MySQLSchema {
     return this;
   }
 
-  // -------------------------
-  //  SQL BUILDER
-  // -------------------------
-  private buildSql() {
-    const segments: string[] = [
-      `SELECT ${this._select}`,
-      this._from ? `FROM ${this._from}` : "",
-      this._join,
-      this._where,
-      this._group,
-      this._order,
-    ];
+  // ============================================================
+  // SQL BUILDER
+  // ============================================================
 
-    if (this._limit >= 0) {
-      segments.push(`LIMIT ${this._limit}`);
-      if (this._offset > 0) segments.push(`OFFSET ${this._offset}`);
+  private buildSql(table?: string) {
+    const s = this._select ? `SELECT ${this._select}` : "SELECT *";
+    const f = table ? `FROM ${table}` : "";
+    const j = this._join ?? "";
+    const w = this._where ?? "";
+    const g = this._group ?? "";
+    const o = this._order ?? "";
+
+    let limit = "";
+    if (this._limit !== null && this._limit >= 0) {
+      limit = `LIMIT ${this._limit}`;
+      if (this._offset) limit += ` OFFSET ${this._offset}`;
     }
 
-    const sql = segments.filter(Boolean).join(" ");
+    const sql = [s, f, j, w, g, o, limit].filter(Boolean).join(" ");
+
     this.reset();
     return sql;
   }
 
-  getSql(table?: string) {
-    if (table) this._from = table;
-    return this.buildSql();
-  }
-
-  private reset() {
-    this._select = "*";
-    this._from = "";
-    this._join = "";
-    this._where = "";
-    this._group = "";
-    this._order = "";
-    this._limit = -1;
-    this._offset = 0;
-  }
-
-  // -------------------------
-  //  EXECUTION
-  // -------------------------
+  // ============================================================
+  // HIGH LEVEL OPERATIONS (SAMA seperti PHP)
+  // ============================================================
 
   async get(table?: string) {
-    if (table) this._from = table;
-    const sql = this.buildSql();
-    const [rows] = await this.pool.query(sql);
+    const sql = this.buildSql(table);
+    const res = await this.query(sql);
 
-    if (Array.isArray(rows)) return new MySQLResult(rows);
-
-    return rows;
+    if (res instanceof MySQLResult) return res;
+    return new MySQLResult([]);
   }
 
-  async insert(table: string, data: Record<string, any>) {
-    const keys = Object.keys(data);
-    const values = Object.values(data);
-    const placeholders = keys.map(() => "?").join(", ");
+  async insert(table: string, data: Record<string, any>): Promise<boolean> {
+    const cols = Object.keys(data);
+    const vals = Object.values(data);
+    const placeholders = cols.map(() => "?").join(",");
 
-    const sql = `INSERT INTO ${table} (${keys.join(", ")}) VALUES (${placeholders})`;
-    const [res]: any = await this.pool.query(sql, values);
+    const sql = `INSERT INTO ${table} (${cols.join(",")}) VALUES (${placeholders})`;
 
-    return res.insertId;
+    const [res] = await this.pool.query(sql, vals);
+
+    this.reset(); // FIX
+
+    return (res as any).affectedRows > 0;
   }
 
-  async update(table: string, data: Record<string, any>, where: string) {
-    const keys = Object.keys(data);
-    const set = keys.map((k) => `${k} = ?`).join(", ");
+  async update(table: string, data: Record<string, any>) {
+    const parts = Object.entries(data).map(
+      ([k, v]) => `${k} = ${this.escapeValue(v)}`
+    );
 
-    const sql = `UPDATE ${table} SET ${set} WHERE ${where}`;
-    const [res]: any = await this.pool.query(sql, Object.values(data));
+    const where = this._where ?? "";
+    const sql = `UPDATE ${table} SET ${parts.join(", ")} ${where}`;
 
-    return res.affectedRows;
+    const res = await this.query(sql);
+
+    this.reset(); // FIX
+
+    return res;
   }
 
-  async delete(table: string, where: string) {
-    const sql = `DELETE FROM ${table} WHERE ${where}`;
-    const [res]: any = await this.pool.query(sql);
+  async delete(table: string) {
+    const where = this._where ?? "";
+    const sql = `DELETE FROM ${table} ${where}`;
 
-    return res.affectedRows;
+    const res = await this.query(sql);
+
+    this.reset(); // FIX
+
+    return res;
   }
 
   async query(sql: string) {
-    const [rows] = await this.pool.query(sql);
+    const executor = this.conn ?? this.pool;
+    const [rows] = await executor.query(sql);
 
     if (Array.isArray(rows)) return new MySQLResult(rows);
-    return rows;
+    return new MySQLResult([]);
   }
 
-  // -------------------------
-  // TRANSACTION SUPPORT
-  // -------------------------
-
-  async startTransaction() {
-    const conn = await this.pool.getConnection();
-    await conn.beginTransaction();
-    return conn;
-  }
-
-  async commit(conn: mysql.PoolConnection) {
-    await conn.commit();
-    conn.release();
-  }
-
-  async rollback(conn: mysql.PoolConnection) {
-    await conn.rollback();
-    conn.release();
+  async lastId(): Promise<number> {
+    const [rows] = await this.pool.query("SELECT LAST_INSERT_ID() AS lastid");
+    return (rows as any)[0].lastid;
   }
 }
