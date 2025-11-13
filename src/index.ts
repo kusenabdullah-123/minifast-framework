@@ -7,4 +7,4 @@ export { HttpException } from './core/HttpException.js';
 export { miniDir, miniFile } from './core/PathHelper.js';
 export { Manager } from './core/database/Manager.js'
 export { MySQLSchema } from './core/database/MySQLSchema.js'
-export { Result } from './core/database/Result.js'
+export { MySQLResult } from './core/database/Result.js'
